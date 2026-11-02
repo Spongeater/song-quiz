@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Song Quiz</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">🎵 Song Quiz</div>
+  <div class="vol">
+    <button id="mute" class="sm" title="Mute / unmute">🔊</button>
+    <input id="vol" type="range" min="0" max="100" step="1" value="70" aria-label="Volume">
+    <span id="volPct">70%</span>
+  </div>
+</header>
+
+<main>
+<section id="home" class="screen">
+  <div class="hero">
+    <h1>Guess the song with friends</h1>
+    <p>Real Deezer previews and your own custom tracks. Multiple choice, and the fastest correct answer scores the most.</p>
+  </div>
+  <div class="card">
+    <label class="f"><span>Your name</span><input id="name" placeholder="Enter a display name" maxlength="20"></label>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Host a game</h3>
+      <p class="mut">Paste a Deezer playlist, pick your settings, then share the invite link.</p>
+      <button id="create" class="primary">Create room</button>
+    </div>
+    <div class="card">
+      <h3>Join a game</h3>
+      <p class="mut">Enter the 5-letter room code your host shared.</p>
+      <input id="code" placeholder="ROOM CODE" maxlength="5">
+      <button id="join">Join room</button>
+    </div>
+  </div>
+  <p id="err" class="err"></p>
+  <div class="grid3">
+    <div class="card"><h3>🎧 Listen</h3><p class="mut">Up to 30 seconds of each track plays on everyone's device, and keeps going during the reveal.</p></div>
+    <div class="card"><h3>❓ Answer</h3><p class="mut">Name the title, artist or album, or pick the right album cover.</p></div>
+    <div class="card"><h3>⚡ Score</h3><p class="mut">Correct answers score 500 to 1000 points. The faster you answer, the more you get.</p></div>
+  </div>
+</section>
+
+<section id="lobby" class="screen" hidden>
+  <div class="lobbygrid">
+    <div class="card">
+      <small class="mut">Room code</small>
+      <div class="roomcode" id="roomCode"></div>
+      <button id="copy">Copy invite link</button>
+      <h3>Players <small id="pcount" class="mut"></small></h3>
+      <ul id="players"></ul>
+    </div>
+    <div class="card">
+      <h3>Game settings</h3>
+      <div id="host" hidden>
+        <label class="f"><span>Deezer playlist link(s), one per line. Must be public; use the full deezer.com/…/playlist/ID URL.</span>
+          <textarea id="pl" rows="3" placeholder="https://www.deezer.com/en/playlist/123456789"></textarea></label>
+        <div class="grid3 tight">
+          <label class="f"><span>Song pool</span>
+            <select id="source">
+              <option value="both">Playlist + custom songs</option>
+              <option value="playlist">Playlist only</option>
+              <option value="custom">Custom songs only</option>
+            </select></label>
+          <label class="f"><span>Questions (1 to pool size)</span>
+            <input id="rounds" type="number" min="1" value="10"></label>
+          <label class="f"><span>Time per question</span>
+            <select id="secs"><option value="15">15 seconds</option><option value="20" selected>20 seconds</option><option value="30">30 seconds</option></select></label>
+        </div>
+        <div class="f"><span>Question types</span>
+          <div class="row">
+            <label class="chk"><input type="checkbox" class="qt" value="title" checked> Title</label>
+            <label class="chk"><input type="checkbox" class="qt" value="artist" checked> Artist</label>
+            <label class="chk"><input type="checkbox" class="qt" value="album" checked> Album</label>
+            <label class="chk"><input type="checkbox" class="qt" value="cover" checked> Album art</label>
+          </div>
+        </div>
+        <div class="f"><span>Options</span>
+          <div class="row">
+            <label class="chk"><input type="checkbox" id="hard"> Hard mode (similar wrong options)</label>
+            <label class="chk"><input type="checkbox" id="norm" checked> Level loudness</label>
+          </div>
+        </div>
+        <div class="row"><button id="load">Load songs</button><button id="start" class="primary">Start game</button></div>
+      </div>
+      <div id="guestInfo" class="pre" hidden></div>
+      <p id="status" class="status"></p>
+    </div>
+  </div>
+</section>
+
+<section id="game" class="screen" hidden>
+  <div class="stats">
+    <div class="stat"><small>Question</small><b id="qn">–</b></div>
+    <div class="stat"><small>Time left</small><b id="timeLeft">–</b></div>
+    <div class="stat"><small>Your score</small><b id="myScore">0</b></div>
+    <div class="stat"><small>Your rank</small><b id="myRank">–</b></div>
+    <div class="stat"><small>Answered</small><b id="done">–</b></div>
+  </div>
+  <div class="gamegrid">
+    <div class="card">
+      <div class="bar"><i id="fill"></i></div>
+      <h2 id="prompt"></h2>
+      <div id="opts"></div>
+      <button id="tap" hidden>▶ Tap to play audio</button>
+      <div id="reveal" hidden>
+        <div id="result" class="result"></div>
+        <div class="song">
+          <img id="cover" alt="Album cover">
+          <div>
+            <b id="sTitle"></b><br>
+            <span id="sArtist"></span><br>
+            <small id="sAlbum" class="mut"></small><br>
+            <span id="sSrc" class="tag"></span>
+          </div>
+        </div>
+        <h3>This round</h3>
+        <table id="board"></table>
+        <div class="row between"><small id="nextIn" class="mut"></small><button id="next" class="primary" hidden>Next ▶</button></div>
+      </div>
+    </div>
+    <aside class="card">
+      <h3>Standings</h3>
+      <ol id="side"></ol>
+    </aside>
+  </div>
+</section>
+
+<section id="final" class="screen" hidden>
+  <div class="card">
+    <h2>Final results</h2>
+    <p id="winner" class="result good"></p>
+    <ol id="rank"></ol>
+    <div class="row">
+      <button id="again" class="primary" hidden>Back to lobby</button>
+      <a href=".">Leave</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<audio id="player"></audio>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

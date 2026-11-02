@@ -1,0 +1,52 @@
+[
+  {
+    "title": "Mr. Stalin, You're Eating Too High on the Hog",
+    "artist": "Arthur Smith",
+    "album": "Atomic Platters: Cold War Music from the Golden Age of Homeland Security",
+    "file": "songs/Mr. Stalin, You're Eating Too High on the Hog.mp3",
+    "cover": "songs/stalin_art.png",
+    "start": 45
+  },
+   {
+    "title": "This Land Is Your Land",
+    "artist": "John Williams",
+    "file": "songs/This Land Is Your Land.mp3",
+    "start": 49
+  },
+  {
+    "title": "Hail Hitler",
+    "artist": "Kanye West",
+    "album": "Cuck",
+    "file": "songs/Fire Song 2.mp3",
+    "cover": "songs/WW3.webp",
+    "start": 13
+  },
+  {
+    "title": "Second Term",
+    "artist": "Jib Jab",
+    "file": "songs/JibJab.com - Second Term.ogg",
+    "start": 40
+  },
+  {
+    "title": "We Are Charlie Kirk",
+    "artist": "Spalexma",
+    "album": "Charlie Kirk Forever Alive",
+    "file": "songs/Charlie Kirk Super Event.ogg",
+    "cover": "songs/_We_are_Charlie_Kirk__song_cover.png",
+    "start": 0
+  },
+  {
+    "title": "Let it Snow (Remix)",
+    "artist": "Tom MacDonald",
+    "file": "songs/Tom MacDonald - Let It Snow.mp3",
+    "start": 80
+  },
+   {
+    "title": "WW3",
+    "artist": "Kanye West",
+    "album": "Cuck",
+    "file": "songs/Ye, Kanye West - WW3.m4a",
+    "cover": "songs/WW3.webp",
+    "start": 20
+  },
+]
