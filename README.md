@@ -2,14 +2,6 @@
 
 Multiplayer song guessing game for GitHub Pages. No server: the host's browser runs the game and players connect to it over WebRTC (PeerJS).
 
-## Deploy
-
-1. Put these files at the root of a repo (keep `index.html`, `style.css`, `app.js`, `custom-songs.json`).
-2. Settings → Pages → deploy from your main branch.
-3. Open the site, **Create room**, share the invite link or the 5-letter code.
-
-To test locally, serve the folder (e.g. `python -m http.server`). Opening `index.html` as a file won't load `custom-songs.json`.
-
 ## Playlists
 
 The host pastes one or more Deezer playlist links in the lobby. Requirements:
