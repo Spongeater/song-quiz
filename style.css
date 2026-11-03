@@ -65,7 +65,11 @@ button.sm{padding:4px 10px}
 .tag{display:inline-block;margin-top:4px;padding:1px 10px;border-radius:99px;background:#38384f;font-size:.8rem}
 #board{width:100%;border-collapse:collapse}
 #board td{padding:8px 10px;border-bottom:1px solid #2c2c40}
-#board td:nth-child(n+3){text-align:right}
+#board td:nth-child(n+3),#board th:nth-child(n+3){text-align:right}
+#board th{text-align:left;color:var(--mut);font-weight:500;font-size:.85rem;padding:4px 10px}
+#board td:nth-child(4),#board th:nth-child(4){text-align:left}
+#board td:nth-child(4){color:var(--mut);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pickimg{display:block;width:40px;height:40px;border-radius:6px;object-fit:cover}
 #side,#rank{margin:0;padding-left:1.4rem;display:flex;flex-direction:column;gap:8px}
 #rank{font-size:1.3rem;list-style:none;padding:0}
 .me{color:var(--acc);font-weight:600}
@@ -84,3 +88,6 @@ a{color:var(--acc)}
   #players{grid-template-columns:1fr}
   .roomcode{font-size:2.2rem}
 }
+#pause{margin-left:auto}
+.paused{color:#fbbf24;font-weight:600}
+#game.isPaused #opts{opacity:.35}

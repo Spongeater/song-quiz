@@ -1,7 +1,8 @@
 'use strict';
 /* Song Quiz — static site, host-authoritative multiplayer over WebRTC (PeerJS). */
 
-const PFX = 'songquiz-', CLIP = 30, REVEAL = 8000, NORM_REF = -14, HARD_ALBUM = 12, HARD_ARTIST = 6;   // hard mode weights (normal = 1): higher = more likely to be picked as a wrong option   // NORM_REF: loudness (dB) that louder tracks are turned down to
+const PFX = 'songquiz-', CLIP = 30, REVEAL = 8000, NORM_REF = -14, SIM_ALBUM = 12, SIM_ARTIST = 6, HARD_ALBUM = 60, HARD_ARTIST = 25;
+// Wrong-option weights (an unrelated song = 1; higher = more likely to be picked). SIM_* is the normal mode, HARD_* is hard mode.   // NORM_REF: loudness (dB) that louder tracks are turned down to
 const ICE = { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] } };
 const PROMPT = { title: "What's the title of this song?", artist: 'Who performs this song?', album: 'Which album is this song from?', cover: 'Which album cover belongs to this song?' };
 const SIL = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA=';
@@ -67,7 +68,7 @@ async function aliases() {
 /* ---------------- Host state ---------------- */
 const G = { players: new Map(), conns: new Map(), pool: [], key: null, info: '', st: {}, phase: 'lobby', qs: [], qi: -1, r: null, code: '' };
 const me = { id: null, name: '', host: false };
-let peer, guest, leaving = false, tm, rt, ans = false;
+let peer, guest, leaving = false, tm, rt, ans = false, qo = {};   // qo = current question's options (to show wrong picks)
 
 const readSt = () => ({ source: $('#source').value, pl: $('#pl').value, rounds: Math.max(1, parseInt($('#rounds').value) || 10), secs: +$('#secs').value, types: $$('.qt:checked').map(c => c.value), hard: $('#hard').checked, norm: $('#norm').checked });
 
@@ -94,10 +95,12 @@ async function loadPool(st) {
 function distract(song, t, pool, hard) {
   const seen = new Set([norm(song[t])]), out = [];
   let list;
-  if (hard && t !== 'artist' && song._a) {
-    // hard mode: weighted random order. Same-album songs (title questions only) and same-artist songs get a
+  if (t !== 'artist' && song._a) {
+    // Weighted random order: same-album songs (title questions only) and same-artist songs/albums/covers get a
     // higher chance of landing early, but nothing is guaranteed (Efraimidis-Spirakis weighted shuffle).
-    const w = s => t === 'title' && song._b && s._b === song._b ? HARD_ALBUM : s._a === song._a ? HARD_ARTIST : 1;
+    // Hard mode just uses much bigger weights.
+    const [wAlb, wArt] = hard ? [HARD_ALBUM, HARD_ARTIST] : [SIM_ALBUM, SIM_ARTIST];
+    const w = s => t === 'title' && song._b && s._b === song._b ? wAlb : s._a === song._a ? wArt : 1;
     list = pool.map(s => ({ s, k: Math.random() ** (1 / w(s)) })).sort((a, b) => b.k - a.k).map(x => x.s);
   } else list = shuffle(pool.slice());
   for (const s of list) {
@@ -204,7 +207,7 @@ async function startGame() {
     }
     G.qs = ready.slice(0, G.st.rounds);
     if (!G.qs.length) throw new Error('Not enough songs with distinct titles/artists/albums for these question types.');
-    G.players.forEach(p => p.score = 0); G.phase = 'playing'; G.qi = -1; status(''); nextQ();
+    G.paused = null; G.players.forEach(p => p.score = 0); G.phase = 'playing'; G.qi = -1; status(''); nextQ();
   } catch (e) { status(e.message, 1); all(lobbyMsg()); }
   b.disabled = false;
 }
@@ -219,20 +222,35 @@ function nextQ() {
 }
 function answer(id, n, c) {
   const p = G.players.get(id), q = G.qs[G.qi];
-  if (!p || !G.r || G.r.done || n !== G.qi + 1 || !p.act || p.a || !Number.isInteger(c) || c < 0 || c >= q.options.length) return;
+  if (G.paused || !p || !G.r || G.r.done || n !== G.qi + 1 || !p.act || p.a || !Number.isInteger(c) || c < 0 || c >= q.options.length) return;
   const e = Date.now() - G.r.t0, T = G.st.secs * 1000;
   if (e > T + 500) return;
   p.a = 1; p.c = c; p.pts = c === q.correct ? Math.round(500 + 500 * Math.max(0, 1 - e / T)) : 0;   // 500–1000, faster = more
   all(prog()); chk();
 }
 function endR() {
-  if (!G.r || G.r.done) return;
+  if (!G.r || G.r.done || G.paused) return;
   G.r.done = true; clearTimeout(G.r.timer);
   const q = G.qs[G.qi], s = q.song;
   G.players.forEach(p => p.score += p.pts || 0);
   const res = [...G.players.values()].map(p => ({ id: p.id, name: p.name, c: p.a ? p.c : null, pts: p.pts || 0, score: p.score, gone: !!p.gone })).sort((a, b) => b.score - a.score);
   all({ t: 'rev', correct: q.correct, song: { title: s.title, artist: s.artist, album: s.album, cover: s.cover, src: s.src }, res, last: G.qi === G.qs.length - 1, ms: REVEAL });
-  G.r.timer = setTimeout(nextQ, REVEAL);
+  G.r.revealEnd = Date.now() + REVEAL; G.r.timer = setTimeout(nextQ, REVEAL);
+}
+/* Pause / resume (host only): freezes the question timer or the between-questions countdown for everyone */
+function pauseGame() {
+  if (G.phase !== 'playing' || !G.r || G.paused) return;
+  clearTimeout(G.r.timer);
+  const end = G.r.done ? G.r.revealEnd : G.r.t0 + G.st.secs * 1000 + 700;
+  G.paused = { at: Date.now(), left: Math.max(0, end - Date.now()) };
+  all({ t: 'pause', on: true });
+}
+function resumeGame() {
+  if (!G.paused) return;
+  const { at, left } = G.paused; G.paused = null;
+  if (G.r.done) { G.r.revealEnd = Date.now() + left; G.r.timer = setTimeout(nextQ, left); }
+  else { G.r.t0 += Date.now() - at; G.r.timer = setTimeout(endR, left); }   // paused time doesn't count against anyone
+  all({ t: 'pause', on: false });
 }
 function fin() {
   G.phase = 'done';
@@ -273,6 +291,7 @@ function onMsg(m) {
     case 'lobby': if (cur === 'home' || m.phase === 'lobby') lobbyUI(m); break;
     case 'q': question(m); break;
     case 'prog': $('#done').textContent = `${m.done}/${m.total}`; break;
+    case 'pause': setPause(m.on); break;
     case 'rev': reveal(m); break;
     case 'fin': final(m); break;
   }
@@ -298,27 +317,50 @@ function side(list) {   // sidebar standings + your score/rank tiles
     if (r.id === me.id) { $('#myScore').textContent = r.score; $('#myRank').textContent = `#${i + 1} of ${list.length}`; }
   });
 }
+/* Client-side timers and pause handling */
+let tcfg = null, rleft = 0, paused = false, pausedAt = 0, wasPlaying = false;
+function startTimer(secs, t0) {
+  clearInterval(tm); tcfg = { secs, t0 }; const f = $('#fill');
+  tm = setInterval(() => {
+    const l = Math.max(0, secs - (performance.now() - tcfg.t0) / 1000);
+    f.style.width = l / secs * 100 + '%'; $('#timeLeft').textContent = Math.ceil(l) + 's';
+    if (!l) { clearInterval(tm); lock(); }
+  }, 100);
+}
+function countdown() {
+  clearInterval(rt); const info = $('#nextIn'); info.textContent = `Next in ${rleft}s`;
+  rt = setInterval(() => { info.textContent = --rleft > 0 ? `Next in ${rleft}s` : ''; }, 1000);
+}
+function setPause(on) {
+  if (on === paused) return;
+  paused = on; $('#pausedBanner').hidden = !on; $('#pause').textContent = on ? '▶ Resume' : '⏸ Pause';
+  $('#game').classList.toggle('isPaused', on);
+  if (on) {
+    pausedAt = performance.now(); wasPlaying = !au.paused && !au.ended; au.pause();
+    clearInterval(tm); clearInterval(rt);
+  } else {
+    if (wasPlaying) go();
+    if (!$('#reveal').hidden) countdown();
+    else if (tcfg) { tcfg.t0 += performance.now() - pausedAt; startTimer(tcfg.secs, tcfg.t0); }
+  }
+}
 function question(m) {
   show('game'); clearInterval(tm); clearInterval(rt); ans = false;
+  paused = false; $('#game').classList.remove('isPaused'); $('#pausedBanner').hidden = true; $('#pause').hidden = !me.host; $('#pause').textContent = '⏸ Pause';
   $('#reveal').hidden = true; $('#done').textContent = `0/${m.who}`;
   $('#qn').textContent = `${m.n} / ${m.total}`; $('#prompt').textContent = m.prompt;
-  $('#opts').className = m.kind === 'cover' ? 'art' : ''; side(m.board);
+  $('#opts').className = m.kind === 'cover' ? 'art' : ''; side(m.board); qo = { opts: m.opts, kind: m.kind };
   const o = $('#opts'); o.replaceChildren();
   m.opts.forEach((t, i) => {
     const b = el('button', m.kind === 'cover' ? null : t, 'opt');
     if (m.kind === 'cover') { const im = el('img'); im.src = safe(t); im.alt = 'Album cover option ' + (i + 1); b.append(im); }
     b.onclick = () => {
-      if (ans) return; ans = true; lock(); b.classList.add('pick');
+      if (ans || paused) return; ans = true; lock(); b.classList.add('pick');
       me.host ? answer('host', m.n, i) : guest.send({ t: 'ans', n: m.n, c: i });
     };
     o.append(b);
   });
-  const t0 = performance.now(), f = $('#fill');
-  tm = setInterval(() => {
-    const l = Math.max(0, m.secs - (performance.now() - t0) / 1000);
-    f.style.width = l / m.secs * 100 + '%'; $('#timeLeft').textContent = Math.ceil(l) + 's';
-    if (!l) { clearInterval(tm); lock(); }
-  }, 100);
+  startTimer(m.secs, performance.now());
   nf = m.gain == null ? 1 : Math.max(0.15, Math.min(1, 10 ** ((NORM_REF - m.gain) / 20))); applyVol();
   play(safe(m.url), m.start || 0);
 }
@@ -334,17 +376,24 @@ function reveal(m) {
   const s = m.song; $('#sTitle').textContent = s.title; $('#sArtist').textContent = s.artist; $('#sAlbum').textContent = s.album || 'Unknown album'; $('#sSrc').textContent = s.src === 'c' ? 'Custom song' : 'Deezer preview';
   const cv = $('#cover'); cv.src = safe(s.cover); cv.hidden = !s.cover;
   const bd = $('#board'); bd.replaceChildren();
+  const hd = el('tr'); ['#', 'Player', '', 'Wrong pick', 'Pts', 'Total'].forEach(v => hd.append(el('th', v))); bd.append(hd);
   m.res.forEach((r, i) => {
     const tr = el('tr', null, r.gone ? 'gone' : r.id === me.id ? 'me' : '');
-    [i + 1, r.name, r.c === null ? '–' : r.c === m.correct ? '✓' : '✗', r.pts ? '+' + r.pts : '', r.score].forEach(v => tr.append(el('td', v)));
+    [i + 1, r.name, r.c === null ? '–' : r.c === m.correct ? '✓' : '✗'].forEach(v => tr.append(el('td', v)));
+    const pk = el('td'), pick = r.c !== null && r.c !== m.correct ? (qo.opts || [])[r.c] : null;   // what a wrong player chose
+    if (pick) {
+      if (qo.kind === 'cover') { const im = el('img', null, 'pickimg'); im.src = safe(pick); im.alt = 'Picked cover'; pk.append(im); }
+      else { pk.textContent = pick; pk.title = pick; }
+    } else if (r.c === null) pk.textContent = 'no answer';
+    tr.append(pk);
+    [r.pts ? '+' + r.pts : '', r.score].forEach(v => tr.append(el('td', v)));
     bd.append(tr);
   });
   const nx = $('#next'); nx.hidden = !me.host; nx.textContent = m.last ? 'Final results ▶' : 'Next ▶';
-  let left = Math.round(m.ms / 1000); const info = $('#nextIn'); info.textContent = `Next in ${left}s`;
-  rt = setInterval(() => { info.textContent = --left > 0 ? `Next in ${left}s` : ''; }, 1000);
+  rleft = Math.round(m.ms / 1000); if (!paused) countdown();
 }
 function final(m) {
-  clearInterval(tm); clearInterval(rt); stop(); show('final');
+  clearInterval(tm); clearInterval(rt); stop(); paused = false; show('final');
   const l = $('#rank'); l.replaceChildren();
   m.rank.forEach((r, i) => l.append(el('li', `${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'} ${r.name} — ${r.score}`, r.gone ? 'gone' : '')));
   $('#again').hidden = !me.host;
@@ -388,8 +437,9 @@ $('#load').onclick = async () => {
   } catch (e) { status(e.message, 1); }
   b.disabled = false;
 };
-$('#next').onclick = () => { if (G.r && G.r.done) { clearTimeout(G.r.timer); nextQ(); } };
-$('#again').onclick = () => { G.players.forEach((p, id) => p.gone && G.players.delete(id)); G.phase = 'lobby'; all(lobbyMsg()); };
+$('#pause').onclick = () => G.paused ? resumeGame() : pauseGame();
+$('#next').onclick = () => { if (G.r && G.r.done && !G.paused) { clearTimeout(G.r.timer); nextQ(); } };
+$('#again').onclick = () => { G.players.forEach((p, id) => p.gone && G.players.delete(id)); G.phase = 'lobby'; G.paused = null; all(lobbyMsg()); };
 $('#host').addEventListener('change', () => { G.st = readSt(); all(lobbyMsg()); localStorage.sqpl = $('#pl').value; });
 $('#copy').onclick = () => {
   const u = location.origin + location.pathname + '?room=' + $('#roomCode').textContent;

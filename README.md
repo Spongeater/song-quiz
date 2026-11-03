@@ -64,12 +64,21 @@ Title, artist, album, and **album art** (the options are four album covers and y
 ## Game length, hard mode, loudness
 
 - **Questions:** any number from 1 up to the number of songs in the pool. Use **Load songs** in the lobby to see the pool size. Each song is used at most once per game. Large games take a while to prepare because each Deezer track is looked up individually (throttled to respect Deezer's rate limit).
-- **Hard mode:** wrong options are still random, but similar songs are more likely to show up. For title questions, songs from the same album are the most likely, then songs by the same artist. For album and album-art questions, other albums/covers by the same artist are favored. Nothing is guaranteed, and artist questions are unchanged. The weights are `HARD_ALBUM` (12) and `HARD_ARTIST` (6) at the top of `app.js`; a normal song has weight 1, so raise them for harder games or lower them for gentler ones.
+- **Similar wrong options (always on):** wrong options are random, but similar songs are more likely to show up. For title questions, songs from the same album are the most likely, then songs by the same artist. For album and album-art questions, other albums/covers by the same artist are favored. Nothing is guaranteed, and artist questions are unchanged.
+- **Hard mode:** the same idea with much bigger weights, so look-alike options show up far more often. The weights are at the top of `app.js` (an unrelated song counts as 1): `SIM_ALBUM` (12) and `SIM_ARTIST` (6) for the normal game, `HARD_ALBUM` (60) and `HARD_ARTIST` (25) for hard mode. Raise or lower them to taste.
 - **Level loudness:** louder songs are turned down toward a common level, which evens out the jumps between tracks. Deezer tracks use Deezer's own loudness value. Custom files are measured by the host's browser (approximate). It can only turn songs down, never up, so very quiet songs stay quiet. Turn it off in the lobby if you prefer.
 
 ## Volume
 
 The slider and mute button in the top bar apply to everyone's own device and are remembered between visits.
+
+## Round summary
+
+After each question, the "This round" table shows every player's result, and for players who answered wrong it shows what they picked (the option text, or a small thumbnail for album art questions). Players who didn't answer show "no answer".
+
+## Pausing
+
+The host has a **Pause** button above the timer (during a question or the reveal). Pausing freezes the timer and the audio for everyone, blocks answers, and shows "paused by the host". **Resume** continues with the time that was left, so nobody loses answering time or the countdown to the next question.
 
 ## Scoring
 
