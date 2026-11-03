@@ -7,7 +7,8 @@ const ICE = { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, {
 const PROMPT = { title: "What's the title of this song?", artist: 'Who performs this song?', album: 'Which album is this song from?', cover: 'Which album cover belongs to this song?' };
 const SIL = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA=';
 
-const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const BUILD = '2026-11-03b';   // must match data-build in index.html and --build in style.css (used to detect a half-updated site)
+const $ = s => document.querySelector(s) || document.createElement('div'), $$ = s => [...document.querySelectorAll(s)];   // a missing element never crashes the app
 const el = (t, txt, cls) => { const n = document.createElement(t); if (txt != null) n.textContent = txt; if (cls) n.className = cls; return n; };
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const norm = s => (s || '').toLowerCase().replace(/\(.*?\)|\[.*?\]|\s-\s.*$/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -126,7 +127,7 @@ function pick(pool, st, n) {
 }
 async function prep(q) {            // fresh Deezer preview URL / random 30s window for custom files
   const s = q.song; q.url = s.url; q.start = 0; q.gain = null;
-  if (s.src === 'dz') { try { const d = await jsonp('https://api.deezer.com/track/' + s.dz); if (d.preview) q.url = d.preview; if (G.st.norm && typeof d.gain === 'number') q.gain = d.gain; } catch { } return q; }
+  if (s.src === 'dz') return q;                  // Deezer links are refreshed per question in fresh()
   const dur = await new Promise(r => {
     const a = new Audio(); a.preload = 'metadata';
     const t = setTimeout(() => r(null), 8000);
@@ -203,7 +204,6 @@ async function startGame() {
       const part = c.slice(i, i + 4), msg = `Preparing questions… ${Math.min(i + 4, c.length)}/${c.length}`;
       status(msg); all({ t: 'note', text: msg });
       (await Promise.all(part.map(prep))).forEach(q => q && ready.push(q));
-      if (part.some(q => q.song.src === 'dz')) await new Promise(r => setTimeout(r, 450));   // stay under Deezer's rate limit
     }
     G.qs = ready.slice(0, G.st.rounds);
     if (!G.qs.length) throw new Error('Not enough songs with distinct titles/artists/albums for these question types.');
@@ -211,9 +211,26 @@ async function startGame() {
   } catch (e) { status(e.message, 1); all(lobbyMsg()); }
   b.disabled = false;
 }
-function nextQ() {
-  if (++G.qi >= G.qs.length) return fin();
-  const q = G.qs[G.qi];
+/* Deezer preview links are signed and expire, so each one is fetched fresh right before its question
+   (and prefetched during the previous reveal) instead of all at once when the game starts. */
+async function fresh(q) {
+  const s = q.song;
+  if (s.src !== 'dz' || q.fresh) return q;
+  try {
+    const d = await Promise.race([jsonp('https://api.deezer.com/track/' + s.dz), new Promise((_, no) => setTimeout(no, 4000))]);
+    if (d && d.preview) q.url = d.preview;
+    if (G.st.norm && d && typeof d.gain === 'number') q.gain = d.gain;
+    q.fresh = true;
+  } catch { }                                      // fall back to the link we already have
+  return q;
+}
+async function nextQ() {
+  if (G.busy) return;
+  if (G.qi + 1 >= G.qs.length) { G.qi++; return fin(); }
+  const q = G.qs[G.qi + 1];
+  G.busy = true;
+  try { await (G.ahead && G.ahead.q === q ? G.ahead.p : fresh(q)); } finally { G.busy = false; }
+  G.qi++;
   G.players.forEach(p => { p.a = 0; p.c = null; p.pts = 0; p.act = !p.gone; });
   G.r = { t0: Date.now(), done: false };
   all({ t: 'q', n: G.qi + 1, total: G.qs.length, prompt: PROMPT[q.type], kind: q.type, gain: q.gain, who: act().length, opts: q.options, url: q.url, start: q.start, secs: G.st.secs,
@@ -236,10 +253,11 @@ function endR() {
   const res = [...G.players.values()].map(p => ({ id: p.id, name: p.name, c: p.a ? p.c : null, pts: p.pts || 0, score: p.score, gone: !!p.gone })).sort((a, b) => b.score - a.score);
   all({ t: 'rev', correct: q.correct, song: { title: s.title, artist: s.artist, album: s.album, cover: s.cover, src: s.src }, res, last: G.qi === G.qs.length - 1, ms: REVEAL });
   G.r.revealEnd = Date.now() + REVEAL; G.r.timer = setTimeout(nextQ, REVEAL);
+  const nq = G.qs[G.qi + 1]; if (nq) G.ahead = { q: nq, p: fresh(nq) };   // refresh the next Deezer link while the reveal is showing
 }
 /* Pause / resume (host only): freezes the question timer or the between-questions countdown for everyone */
 function pauseGame() {
-  if (G.phase !== 'playing' || !G.r || G.paused) return;
+  if (G.phase !== 'playing' || !G.r || G.paused || G.busy) return;
   clearTimeout(G.r.timer);
   const end = G.r.done ? G.r.revealEnd : G.r.t0 + G.st.secs * 1000 + 700;
   G.paused = { at: Date.now(), left: Math.max(0, end - Date.now()) };
@@ -259,15 +277,28 @@ function fin() {
 
 /* ---------------- Audio ---------------- */
 const au = $('#player'); let tok = 0;
-const go = () => au.play().then(() => $('#tap').hidden = true).catch(() => $('#tap').hidden = false);
+const go = () => au.play().then(() => $('#tap').hidden = true).catch(e => { if (e && e.name === 'NotAllowedError') $('#tap').hidden = false; });   // only a blocked autoplay needs the tap button
 function unlock() { au.src = SIL; au.play().catch(() => { }); }
-function stop() { tok++; au.pause(); au.onloadedmetadata = au.ontimeupdate = null; }
+let want = false, stopAt = 0, retries = 0;
+function stop() { tok++; want = false; au.pause(); au.onloadedmetadata = au.ontimeupdate = au.onerror = null; }
 function play(url, start) {
-  stop(); const t = tok; $('#tap').hidden = true;
-  au.onloadedmetadata = () => { if (t !== tok) return; if (start) au.currentTime = start; go(); };
-  au.ontimeupdate = () => { if (au.currentTime >= start + CLIP) au.pause(); };
+  stop(); const t = tok; retries = 0; want = true; stopAt = start + CLIP;
+  $('#tap').hidden = true; $('#audioMsg').hidden = true;
+  au.onloadedmetadata = () => {
+    if (t !== tok) return;
+    if (start) au.currentTime = start;
+    if (paused) wasPlaying = true; else go();      // a pause that began while the clip was loading stays paused
+  };
+  au.ontimeupdate = () => { if (au.currentTime >= stopAt) { au.pause(); want = false; } };
+  au.onerror = () => {                              // network hiccup or expired link: retry twice, then say so
+    if (t !== tok) return;
+    if (retries++ < 2) setTimeout(() => { if (t === tok) { au.src = url; au.load(); } }, 700);
+    else { $('#audioMsg').textContent = 'Audio failed to load for this song (the link may have expired or the file is missing).'; $('#audioMsg').hidden = false; }
+  };
   au.src = url; au.load();
 }
+// watchdog: if the browser stops the clip early for any reason, start it again
+setInterval(() => { if (want && !paused && au.src && au.paused && !au.ended && au.readyState > 0 && au.currentTime < stopAt) go(); }, 1500);
 $('#tap').onclick = go;
 
 /* Volume control (slider + mute), remembered in localStorage */
@@ -361,7 +392,7 @@ function question(m) {
     o.append(b);
   });
   startTimer(m.secs, performance.now());
-  nf = m.gain == null ? 1 : Math.max(0.15, Math.min(1, 10 ** ((NORM_REF - m.gain) / 20))); applyVol();
+  nf = m.gain == null || !isFinite(m.gain) ? 1 : Math.max(0.15, Math.min(1, 10 ** ((NORM_REF - m.gain) / 20))); applyVol();
   play(safe(m.url), m.start || 0);
 }
 function reveal(m) {
@@ -438,7 +469,7 @@ $('#load').onclick = async () => {
   b.disabled = false;
 };
 $('#pause').onclick = () => G.paused ? resumeGame() : pauseGame();
-$('#next').onclick = () => { if (G.r && G.r.done && !G.paused) { clearTimeout(G.r.timer); nextQ(); } };
+$('#next').onclick = () => { if (G.r && G.r.done && !G.paused && !G.busy) { clearTimeout(G.r.timer); nextQ(); } };
 $('#again').onclick = () => { G.players.forEach((p, id) => p.gone && G.players.delete(id)); G.phase = 'lobby'; G.paused = null; all(lobbyMsg()); };
 $('#host').addEventListener('change', () => { G.st = readSt(); all(lobbyMsg()); localStorage.sqpl = $('#pl').value; });
 $('#copy').onclick = () => {
@@ -451,3 +482,16 @@ $('#name').value = localStorage.sqname || '';
 $('#pl').value = localStorage.sqpl || '';
 $('#code').value = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
 $('#err').textContent = sessionStorage.sqerr || ''; sessionStorage.removeItem('sqerr');
+
+/* Detect a half-updated deployment: index.html, style.css and app.js must all be from the same download */
+$('#buildTag').textContent = BUILD;
+{
+  const css = getComputedStyle(document.documentElement).getPropertyValue('--build').replace(/["'\s]/g, '');
+  const bad = [['index.html', document.documentElement.dataset.build], ['style.css', css]].filter(([, v]) => v !== BUILD).map(([n]) => n);
+  if (bad.length) {
+    const b = document.createElement('div');
+    b.style.cssText = 'background:#7f1d1d;color:#fff;padding:12px 20px;text-align:center;font:600 15px system-ui,sans-serif';
+    b.textContent = `Out-of-date file(s): ${bad.join(', ')}. Upload ALL files from the latest download (index.html, style.css, app.js) and hard-refresh (Ctrl+F5). Missing buttons and tables are caused by this.`;
+    document.body.prepend(b);
+  }
+}

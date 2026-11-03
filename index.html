@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-build="2026-11-03b">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Song Quiz</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2026-11-03b">
 </head>
 <body>
 <header class="top">
@@ -109,6 +109,7 @@
       <h2 id="prompt"></h2>
       <div id="opts"></div>
       <button id="tap" hidden>▶ Tap to play audio</button>
+      <p id="audioMsg" class="err" hidden></p>
       <div id="reveal" hidden>
         <div id="result" class="result"></div>
         <div class="song">
@@ -145,8 +146,9 @@
 </section>
 </main>
 
+<footer class="foot">Song Quiz · build <span id="buildTag"></span></footer>
 <audio id="player"></audio>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=2026-11-03b"></script>
 </body>
 </html>
